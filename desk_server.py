@@ -165,10 +165,6 @@ class DeskController:
                         h = self.last_status["height"]
                         if abs(h - height_mm) <= 2:
                             break
-                        if i == 20 and start_height is not None and h == start_height:
-                            log.warning("桌子沒有回應")
-                            await self._send_stop()
-                            return {"error": "桌子沒有回應移動指令", "height": h}
             except Exception as e:
                 log.error("移動異常: %s", e)
             finally:

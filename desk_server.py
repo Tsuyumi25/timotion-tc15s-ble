@@ -212,6 +212,8 @@ async def handle_status(request):
 
 async def handle_move_to(request):
     height = int(request.match_info["height"])
+    if not 620 <= height <= 1300:
+        return web.json_response({"error": "高度須介於 620–1300 mm"}, status=400)
     return web.json_response(await desk.move_to(height))
 
 

@@ -75,13 +75,15 @@ python desk_server.py
 
 Docker Desktop（macOS / Windows）不支援 USB 裝置透傳。非 Linux 請直接用 pip 執行。
 
-`install.sh` 會自動偵測 dongle 並寫入 `.env`，之後直接啟動：
-
 ```bash
-docker compose up -d --build
+git clone https://github.com/Tsuyumi25/timotion-tc15s-ble.git
+cd timotion-tc15s-ble
+./install.sh --setup    # 環境檢查 + 安裝 + 配對 dongle（一條龍）
+docker compose up -d    # 啟動（image 從 GHCR 拉取）
+python3 cleanup.py      # 清理原始碼，只留部署所需檔案
 ```
 
-> dongle 路徑透過 `.env` 的 `DONGLE_DEVICE` 變數傳入 docker-compose，serial port 由環境變數 `SERIAL_PORT` 自動覆蓋，不需手動改 config.yaml。
+> `install.sh` 自動偵測 dongle 並寫入 `.env`，`docker-compose.yml` 透過 `${DONGLE_DEVICE}` 讀取。serial port 由環境變數 `SERIAL_PORT` 自動覆蓋，不需手動改 config.yaml。
 
 查看日誌：
 

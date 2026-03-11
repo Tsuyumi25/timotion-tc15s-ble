@@ -4,9 +4,9 @@ services:
     ports:
       - "8741:8741"
     devices:
-      # 查詢 dongle 路徑：ls -l /dev/serial/by-id/
-      # 範例：usb-Nordic_Semiconductor_nRF52_USB_CDC_BLE_Demo_XXXXXXXX-if00
-      - /dev/serial/by-id/CHANGE_ME:/dev/ttyDONGLE
+      - ${DONGLE_DEVICE}:/dev/ttyDONGLE
+    environment:
+      - SERIAL_PORT=/dev/ttyDONGLE
     volumes:
       - ./config.yaml:/app/config.yaml:ro
     restart: unless-stopped

@@ -8,16 +8,35 @@ TiMOTION TC15S 升降桌 BLE 控制器。透過 ATM Dongle (Raytac MDBT50Q-RX-AT
 
 - Python 3.11+
 - Raytac MDBT50Q-RX-ATM dongle
+- Linux：需 Docker（生產部署）或直接 pip 執行
+
+## 快速開始（Linux）
+
+```bash
+git clone https://github.com/user/timotion-ble.git
+cd timotion-ble
+chmod +x install.sh
+./install.sh
+```
+
+`install.sh` 會自動：
+- 檢查 Python 版本、venv 支援、dialout 群組
+- 建立 `.venv` 並安裝所有依賴（含 bleak 掃描）
+- 建立 `config.yaml`
+- 偵測 dongle 並寫入 `.env`（Docker 用）
+
+遇到需要 `sudo` 的問題（如 `python3.x-venv` 未安裝、使用者不在 `dialout` 群組），會印出修正指令，修正後重跑即可。
 
 ## 設定 Dongle
 
+插入 dongle 後執行：
+
 ```bash
-cp config.example.yaml config.yaml
-pip install ".[setup]"
+source .venv/bin/activate
 python setup_dongle.py
 ```
 
-互動式引導：自動掃描附近的 NUS 裝置 → 選擇 → 寫入 dongle flash → 儲存到 `config.yaml`。只需執行一次。
+互動式引導：掃描附近 NUS 裝置 → 選擇 → 寫入 dongle flash → 儲存到 `config.yaml`。只需執行一次。
 
 ```
 掃描附近的 BLE 裝置（5 秒）...
@@ -39,31 +58,66 @@ python setup_dongle.py
 python setup_dongle.py --reset   # 恢復 dongle 出廠設定
 ```
 
-## 啟動 Server
+## 啟動
+
+### 直接執行
 
 ```bash
+source .venv/bin/activate
+python desk_server.py
+```
+
+### Docker 部署（僅 Linux）
+
+Docker Desktop（macOS / Windows）不支援 USB 裝置透傳。非 Linux 請直接用 pip 執行。
+
+`install.sh` 會自動偵測 dongle 並寫入 `.env`，之後直接啟動：
+
+```bash
+docker compose up -d --build
+```
+
+> dongle 路徑透過 `.env` 的 `DONGLE_DEVICE` 變數傳入 docker-compose，serial port 由環境變數 `SERIAL_PORT` 自動覆蓋，不需手動改 config.yaml。
+
+查看日誌：
+
+```bash
+docker compose logs -f
+```
+
+## API
+
+| 端點 | 方法 | 說明 |
+|------|------|------|
+| `/status` | GET | 查詢高度 (mm) 與連線狀態 |
+| `/to/{height_mm}` | POST | 移到指定高度，範圍 620–1300 mm |
+| `/stop` | POST | 緊急停止 |
+
+範例：
+
+```bash
+curl http://localhost:8741/status
+curl -X POST http://localhost:8741/to/750
+curl -X POST http://localhost:8741/stop
+```
+
+## 測試面板
+
+`panel.html` 是一個簡易的本機測試 UI，瀏覽器直接開啟即可（API 寫死 `localhost:8741`）。
+
+## Windows / macOS
+
+Docker 不可用，直接用 pip 執行：
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # macOS
 pip install .
 python desk_server.py
 ```
 
-API：
-- `GET  /status` — 查詢高度與連線狀態
-- `POST /to/{height_mm}` — 移到指定高度 (mm)
-- `POST /stop` — 緊急停止
-
-## Docker（僅 Linux）
-
-Docker Desktop（macOS / Windows）不支援 USB 裝置透傳，非 Linux 請直接用 pip 安裝。
-
-```bash
-# 1. 先在 host 完成 dongle 設定（見上方）
-# 2. 查詢 dongle 的穩定路徑
-ls -l /dev/serial/by-id/
-
-# 3. 編輯 docker-compose.yml，將 devices 改為實際路徑
-# 4. config.yaml 設定 serial_port: /dev/ttyDONGLE
-docker compose up -d
-```
+Windows 長期運行可考慮 Task Scheduler 或 [NSSM](https://nssm.cc/)。
 
 ## 協議文檔
 

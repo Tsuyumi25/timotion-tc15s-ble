@@ -8,6 +8,7 @@ HTTP API：
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 
 import yaml
@@ -41,7 +42,7 @@ def _load_config() -> dict:
 
 _cfg = _load_config()
 HTTP_PORT: int = _cfg["server"]["port"]
-SERIAL_PORT: str | None = _cfg["server"]["serial_port"]
+SERIAL_PORT: str | None = os.environ.get("SERIAL_PORT") or _cfg["server"]["serial_port"]
 
 
 # --- Desk Controller (async, serial transport in thread) ---

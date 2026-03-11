@@ -1,0 +1,8 @@
+# 升降桌 BLE 設定（desk.name 由 setup_dongle.py 互動寫入）
+desk:
+  name: null            # BLE 裝置名，執行 setup_dongle.py 後自動填入
+
+# 伺服器設定
+server:
+  port: 8741
+  serial_port: null     # null = 自動偵測

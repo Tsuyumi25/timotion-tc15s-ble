@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Desk Control</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #eee; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .panel { width: 320px; padding: 24px; }
+  .status { text-align: center; margin-bottom: 24px; }
+  .height { font-size: 48px; font-weight: 700; color: #0ff; }
+  .height .unit { font-size: 20px; color: #888; }
+  .conn { font-size: 13px; color: #666; margin-top: 4px; }
+  .conn.on { color: #4a4; }
+  .move-row { display: flex; gap: 10px; margin-bottom: 12px; }
+  .move-row input { flex: 1; padding: 14px; font-size: 18px; font-weight: 600; border: 2px solid #333; border-radius: 10px; background: #16213e; color: #eee; text-align: center; outline: none; }
+  .move-row input:focus { border-color: #0ff; }
+  .move-row button { padding: 14px 20px; font-size: 16px; font-weight: 700; border: none; border-radius: 10px; cursor: pointer; background: #2d6a4f; color: #fff; }
+  .move-row button:active { transform: scale(0.97); }
+  .move-row button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .stop { width: 100%; padding: 14px; font-size: 16px; font-weight: 700; background: #c00; color: #fff; border: none; border-radius: 10px; cursor: pointer; }
+  .stop:active { background: #900; }
+  .log { margin-top: 16px; font-size: 12px; color: #666; text-align: center; min-height: 18px; }
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="status">
+    <div class="height"><span id="h">--</span><span class="unit"> cm</span></div>
+    <div class="conn" id="conn">Disconnected</div>
+  </div>
+  <div class="move-row">
+    <input id="target" type="number" placeholder="mm" min="600" max="1300" step="10">
+    <button id="go" onclick="move()">Go</button>
+  </div>
+  <button class="stop" onclick="stop()">Stop</button>
+  <div class="log" id="log"></div>
+</div>
+<script>
+const API = location.origin;
+const hEl = document.getElementById('h');
+const connEl = document.getElementById('conn');
+const logEl = document.getElementById('log');
+const goBtn = document.getElementById('go');
+const targetEl = document.getElementById('target');
+
+function setLog(msg) { logEl.textContent = msg; }
+
+async function poll() {
+  try {
+    const r = await fetch(API + '/status');
+    const d = await r.json();
+    if (d.connected) {
+      hEl.textContent = (d.height / 10).toFixed(1);
+      connEl.textContent = 'Connected';
+      connEl.className = 'conn on';
+    } else {
+      hEl.textContent = '--';
+      connEl.textContent = 'Disconnected';
+      connEl.className = 'conn';
+    }
+  } catch {
+    hEl.textContent = '--';
+    connEl.textContent = 'Server offline';
+    connEl.className = 'conn';
+  }
+}
+
+async function move() {
+  const mm = parseInt(targetEl.value);
+  if (!mm || mm < 600 || mm > 1300) { setLog('Enter height 600–1300 mm'); return; }
+  goBtn.disabled = true;
+  setLog('Moving to ' + mm + 'mm...');
+  try {
+    const r = await fetch(API + '/to/' + mm, { method: 'POST' });
+    const d = await r.json();
+    if (d.error) { setLog('Error: ' + d.error); }
+    else if (d.height != null) { hEl.textContent = (d.height / 10).toFixed(1); setLog('Done'); }
+    else { setLog('Done'); }
+  } catch { setLog('Request failed'); }
+  goBtn.disabled = false;
+}
+
+async function stop() {
+  setLog('Stopping...');
+  try {
+    await fetch(API + '/stop', { method: 'POST' });
+    setLog('Stopped');
+  } catch { setLog('Request failed'); }
+}
+
+targetEl.addEventListener('keydown', e => { if (e.key === 'Enter') move(); });
+poll();
+setInterval(poll, 2000);
+</script>
+</body>
+</html>

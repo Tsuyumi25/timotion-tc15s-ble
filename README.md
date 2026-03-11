@@ -14,66 +14,9 @@
 - Raytac MDBT50Q-RX-ATM dongle
 - Linux：需 Docker（生產部署）或直接 pip 執行
 
-## 快速開始（Linux）
+## 部署
 
-```bash
-git clone https://github.com/Tsuyumi25/timotion-tc15s-ble.git
-cd timotion-tc15s-ble
-chmod +x install.sh
-./install.sh
-```
-
-`install.sh` 會自動：
-- 檢查 Python 版本、venv 支援、dialout 群組
-- 建立 `.venv` 並安裝所有依賴（含 bleak 掃描）
-- 建立 `config.yaml`
-- 偵測 dongle 並寫入 `.env`（Docker 用）
-
-遇到需要 `sudo` 的問題（如 `python3.x-venv` 未安裝、使用者不在 `dialout` 群組），會印出修正指令，修正後重跑即可。
-
-## 設定 Dongle
-
-插入 dongle 後執行：
-
-```bash
-source .venv/bin/activate
-python setup_dongle.py
-```
-
-互動式引導：掃描附近 NUS 裝置 → 選擇 → 寫入 dongle flash → 儲存到 `config.yaml`。只需執行一次。
-
-```
-掃描附近的 BLE 裝置（5 秒）...
-
-找到 1 個 NUS 裝置：
-
-  [1] HC-  XXXX   (-64 dBm)  AA:BB:CC:DD:EE:FF
-
-選擇裝置編號: 1
-
-✅ 設定成功！Dongle 會自動連線 'HC-  XXXX'。
-```
-
-> 掃描需要 PC 內建藍牙網卡（與 dongle 無關）。若無藍牙網卡，會退回手動輸入模式——可用手機安裝 [nRF Connect](https://play.google.com/store/apps/details?id=no.nordicsemi.android.mcp) 查看桌子的 BLE 裝置名稱。
-
-其他操作：
-
-```bash
-python setup_dongle.py --reset   # 恢復 dongle 出廠設定
-```
-
-## 啟動
-
-### 直接執行
-
-```bash
-source .venv/bin/activate
-python desk_server.py
-```
-
-### Docker 部署（僅 Linux）
-
-Docker Desktop（macOS / Windows）不支援 USB 裝置透傳。非 Linux 請直接用 pip 執行。
+### Linux — Docker（推薦）
 
 ```bash
 git clone https://github.com/Tsuyumi25/timotion-tc15s-ble.git
@@ -90,6 +33,65 @@ python3 cleanup.py      # 清理原始碼，只留部署所需檔案
 ```bash
 docker compose logs -f
 ```
+
+### Linux — 直接執行
+
+```bash
+./install.sh            # 環境檢查 + 建 venv + 安裝依賴
+source .venv/bin/activate
+python setup_dongle.py  # 配對 dongle（互動式，只需一次）
+python desk_server.py
+```
+
+`install.sh` 會自動：
+- 檢查 Python 版本、venv 支援、dialout 群組
+- 建立 `.venv` 並安裝所有依賴（含 bleak 掃描）
+- 建立 `config.yaml`
+- 偵測 dongle 並寫入 `.env`（Docker 用）
+
+遇到需要 `sudo` 的問題（如 `python3.x-venv` 未安裝、使用者不在 `dialout` 群組），會印出修正指令，修正後重跑即可。
+
+### 設定 Dongle
+
+`setup_dongle.py` 互動式引導：掃描附近 NUS 裝置 → 選擇 → 寫入 dongle flash → 儲存到 `config.yaml`。只需執行一次。
+
+```
+掃描附近的 BLE 裝置（5 秒）...
+
+找到 1 個 NUS 裝置：
+
+  [1] HC-  XXXX   (-64 dBm)  AA:BB:CC:DD:EE:FF
+
+選擇裝置編號: 1
+
+✅ 設定成功！Dongle 會自動連線 'HC-  XXXX'。
+```
+
+> 掃描需要 PC 內建藍牙網卡（與 dongle 無關）。若無藍牙網卡，會退回手動輸入模式——可用手機安裝 [nRF Connect](https://play.google.com/store/apps/details?id=no.nordicsemi.android.mcp) 查看桌子的 BLE 裝置名稱。
+
+```bash
+python setup_dongle.py --reset   # 恢復 dongle 出廠設定
+```
+
+### Windows / macOS
+
+Docker Desktop 不支援 USB 裝置透傳，直接用 pip 執行：
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # macOS
+pip install .
+python setup_dongle.py        # 配對 dongle（只需一次）
+python desk_server.py
+```
+
+Windows 長期運行可考慮 Task Scheduler 或 [NSSM](https://nssm.cc/)。
+
+### 疑難排解
+
+- **容器啟動後卡在「探測連線狀態」或「開始掃描」**：拔插 USB dongle 再重啟容器。Docker 強制停止（`docker kill`）可能讓 dongle 處於不乾淨的狀態，重新插拔可重置 firmware。
+- **連線正常但偶爾斷線**：dongle 的 BLE 信號範圍有限（RSSI threshold 預設 -65dBm），確保 dongle 與桌子距離在 2 公尺內。
 
 ## API
 
@@ -109,21 +111,7 @@ curl -X POST http://localhost:8741/stop
 
 ## 測試面板
 
-`panel.html` 是一個簡易的本機測試 UI，瀏覽器直接開啟即可（API 寫死 `localhost:8741`）。
-
-## Windows / macOS
-
-Docker 不可用，直接用 pip 執行：
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate        # Windows
-# source .venv/bin/activate   # macOS
-pip install .
-python desk_server.py
-```
-
-Windows 長期運行可考慮 Task Scheduler 或 [NSSM](https://nssm.cc/)。
+`panel.html` 是一個簡易的測試 UI，瀏覽器直接開啟即可。頂部的輸入框可修改 API 位址（預設 `http://localhost:8741`）。
 
 ## 協議文檔
 

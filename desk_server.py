@@ -32,11 +32,17 @@ CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
 def _load_config() -> dict:
     defaults = {"server": {"port": 8741, "serial_port": None}}
-    if CONFIG_PATH.exists():
+    try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             user = yaml.safe_load(f) or {}
-        if "server" in user and isinstance(user["server"], dict):
-            defaults["server"].update(user["server"])
+    except FileNotFoundError:
+        return defaults
+    if "server" in user and isinstance(user["server"], dict):
+        defaults["server"].update(user["server"])
+    # 保留非 server 的區塊（如 desk.name）
+    for k, v in user.items():
+        if k != "server":
+            defaults[k] = v
     return defaults
 
 
@@ -149,7 +155,6 @@ class DeskController:
         async with self._lock:
             self._cancel.clear()
             cmd = cmd_move_to(height_mm)
-            start_height = self.last_status["height"] if self.last_status else None
             log.info("移動到 %dmm...", height_mm)
 
             WARMUP = 4
@@ -238,11 +243,7 @@ def main():
     app.on_cleanup.append(on_cleanup)
 
     # 檢查是否已執行 setup
-    cfg = {}
-    if CONFIG_PATH.exists():
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
-    desk_name = (cfg.get("desk") or {}).get("name")
+    desk_name = (_cfg.get("desk") or {}).get("name")
     if not desk_name:
         log.warning("⚠ config.yaml 未設定 desk.name，請先執行: python setup_dongle.py")
 

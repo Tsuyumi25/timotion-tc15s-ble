@@ -17,6 +17,8 @@ import time
 import serial
 import serial.tools.list_ports
 
+from timotion.protocol import CMD_IDLE
+
 log = logging.getLogger("timotion")
 
 # 桌子信號約 -64dBm，-65 是測試確認的有效最低值
@@ -77,10 +79,8 @@ class ATMTransport:
         if self._connected:
             return True
         log.info("探測連線狀態...")
-        # CMD_IDLE = dd 00 40 20 00 00 00 60
-        idle_cmd = bytes([0xDD, 0x00, 0x40, 0x20, 0x00, 0x00, 0x00, 0x60])
         self._ser.reset_input_buffer()
-        self._ser.write(idle_cmd)
+        self._ser.write(CMD_IDLE)
         data = self._ser.read(512)
         if data and any(b == 0x9D for b in data):
             self._connected = True

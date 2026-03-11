@@ -24,11 +24,15 @@ import serial
 import serial.tools.list_ports
 import yaml
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+from timotion.transport import find_dongle_port, DEFAULT_RSSI_THRESHOLD
 
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
+
+def _init_stdout():
+    """Windows 終端 UTF-8 相容（避免 UnicodeEncodeError）"""
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
 NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-RSSI_THRESHOLD = -65
+RSSI_THRESHOLD = DEFAULT_RSSI_THRESHOLD
 
 
 # --- BLE Scan ---
@@ -112,11 +116,7 @@ def get_config_name() -> str | None:
 
 # --- Dongle Serial ---
 
-def find_dongle() -> str | None:
-    for port in serial.tools.list_ports.comports():
-        if port.vid is not None:
-            return port.device
-    return None
+find_dongle = find_dongle_port
 
 
 def at_cmd(ser: serial.Serial, cmd: str, delay: float = 0.3) -> bytes:
@@ -207,6 +207,8 @@ def factory_reset(ser: serial.Serial):
 # --- Main ---
 
 def main():
+    _init_stdout()
+
     # --reset: 恢復出廠設定
     if "--reset" in sys.argv:
         port = find_dongle()

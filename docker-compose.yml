@@ -1,0 +1,12 @@
+services:
+  desk:
+    build: .
+    ports:
+      - "8741:8741"
+    devices:
+      # 查詢 dongle 路徑：ls -l /dev/serial/by-id/
+      # 範例：usb-Raytac_Corporation_Raytac_BLE_Dongle_XXXXXXXX-if00
+      - /dev/serial/by-id/usb-Raytac_CHANGE_ME:/dev/ttyDONGLE
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    restart: unless-stopped

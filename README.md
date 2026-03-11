@@ -7,14 +7,14 @@ TiMOTION TC15S 升降桌 BLE 控制器。透過 ATM Dongle (Raytac MDBT50Q-RX-AT
 ## 需求
 
 - Python 3.11+
-- [uv](https://docs.astral.sh/uv/)（推薦）或 pip
 - Raytac MDBT50Q-RX-ATM dongle
 
 ## 設定 Dongle
 
 ```bash
 cp config.example.yaml config.yaml
-uv run --extra setup setup_dongle.py
+pip install ".[setup]"
+python setup_dongle.py
 ```
 
 互動式引導：自動掃描附近的 NUS 裝置 → 選擇 → 寫入 dongle flash → 儲存到 `config.yaml`。只需執行一次。
@@ -36,19 +36,34 @@ uv run --extra setup setup_dongle.py
 其他操作：
 
 ```bash
-uv run --extra setup setup_dongle.py --reset   # 恢復 dongle 出廠設定
+python setup_dongle.py --reset   # 恢復 dongle 出廠設定
 ```
 
 ## 啟動 Server
 
 ```bash
-uv run desk_server.py
+pip install .
+python desk_server.py
 ```
 
 API：
 - `GET  /status` — 查詢高度與連線狀態
 - `POST /to/{height_mm}` — 移到指定高度 (mm)
 - `POST /stop` — 緊急停止
+
+## Docker（僅 Linux）
+
+Docker Desktop（macOS / Windows）不支援 USB 裝置透傳，非 Linux 請直接用 pip 安裝。
+
+```bash
+# 1. 先在 host 完成 dongle 設定（見上方）
+# 2. 查詢 dongle 的穩定路徑
+ls -l /dev/serial/by-id/
+
+# 3. 編輯 docker-compose.yml，將 devices 改為實際路徑
+# 4. config.yaml 設定 serial_port: /dev/ttyDONGLE
+docker compose up -d
+```
 
 ## 協議文檔
 

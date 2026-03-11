@@ -62,6 +62,7 @@ class DeskController:
         self._cancel = asyncio.Event()
         self._connected = False
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._stop_time: float = 0
 
     # -- Data callback (called from reader thread) --
 
@@ -132,9 +133,10 @@ class DeskController:
             log.info("已連線！高度 %dmm (%.1fcm)", h, h / 10)
 
     async def _heartbeat_until_disconnect(self):
-        """每秒發 IDLE 心跳。Lock 被佔時跳過。"""
+        """每秒發 IDLE 心跳。Lock 被佔或剛停止時跳過。"""
         while self._connected and self.transport.connected:
-            if not self._lock.locked():
+            now = asyncio.get_event_loop().time()
+            if not self._lock.locked() and now - self._stop_time > 0.5:
                 self.transport.write(CMD_IDLE)
             await asyncio.sleep(1.0)
 
@@ -143,10 +145,9 @@ class DeskController:
     async def _send_stop(self):
         if not self._connected:
             return
-        for _ in range(3):
+        for _ in range(5):
             self.transport.write(CMD_STOP)
-            await asyncio.sleep(0.02)
-        self.transport.write(CMD_IDLE)
+            await asyncio.sleep(0.03)
 
     async def move_to(self, height_mm: int) -> dict:
         if not self._connected:
@@ -154,15 +155,24 @@ class DeskController:
 
         async with self._lock:
             self._cancel.clear()
+            # 讓 event loop 跑兩輪，給同時到達的 stop() 機會執行
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            if self._cancel.is_set():
+                h = self.last_status["height"] if self.last_status else None
+                return {"ok": True, "height": h, "cancelled": True}
+
             cmd = cmd_move_to(height_mm)
             log.info("移動到 %dmm...", height_mm)
 
             WARMUP = 4
 
+            cancelled = False
             try:
                 for i in range(200):
                     if self._cancel.is_set():
                         log.info("移動被取消")
+                        cancelled = True
                         break
                     self.transport.write(cmd)
                     await asyncio.sleep(0.05)
@@ -177,10 +187,11 @@ class DeskController:
 
             h = self.last_status["height"] if self.last_status else None
             log.info("到達 %smm", h)
-            return {"ok": True, "height": h}
+            return {"ok": True, "height": h, "cancelled": cancelled}
 
     async def stop(self) -> dict:
         self._cancel.set()
+        self._stop_time = asyncio.get_event_loop().time()
         await self._send_stop()
         return {"ok": True}
 

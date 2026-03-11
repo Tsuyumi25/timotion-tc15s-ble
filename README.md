@@ -1,8 +1,12 @@
-# timotion-ble
+# timotion-tc15s-ble — TiMOTION TC15S 升降桌 BLE 控制器
 
-TiMOTION TC15S 升降桌 BLE 控制器。透過 ATM Dongle (Raytac MDBT50Q-RX-ATM) + Nordic UART Service (NUS) 控制升降桌高度。
+透過 ATM Dongle (Raytac MDBT50Q-RX-ATM) + Nordic UART Service (NUS) 控制升降桌高度。
 
 適用於搭載 TiMOTION TC15S 控制盒（內建 BLE）的升降桌，桌腳型號不限。
+
+### 為什麼用 Dongle 而不是主機藍牙？
+
+升降桌需要持續 BLE 心跳維持連線。直接用 Linux BlueZ 藍牙堆疊常駐，實測很快就記憶體耗盡（OOM）——BlueZ / D-Bus 在持續 BLE notification 下有多個已知的 memory leak。ATM Dongle 走 USB serial 透傳，完全繞過 OS 藍牙堆疊，從根本上隔離問題。
 
 ## 需求
 
@@ -13,8 +17,8 @@ TiMOTION TC15S 升降桌 BLE 控制器。透過 ATM Dongle (Raytac MDBT50Q-RX-AT
 ## 快速開始（Linux）
 
 ```bash
-git clone https://github.com/user/timotion-ble.git
-cd timotion-ble
+git clone https://github.com/Tsuyumi25/timotion-tc15s-ble.git
+cd timotion-tc15s-ble
 chmod +x install.sh
 ./install.sh
 ```

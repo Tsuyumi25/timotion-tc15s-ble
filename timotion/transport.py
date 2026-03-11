@@ -221,5 +221,6 @@ class ATMTransport:
                 if not self._connected:
                     self._connected = True
                     log.info("BLE 已連線（收到桌子回應）")
+                log.debug("RX [%d]: %s", len(data), data.hex(' '))
                 if self._on_data:
                     self._on_data(data)

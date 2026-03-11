@@ -62,10 +62,17 @@ class DeskController:
         parsed = parse_latest(data)
         if not parsed:
             return
-        if self.last_status and "limit" not in parsed:
-            self.last_status["height"] = parsed["height"]
-        else:
+        if not self.last_status:
             self.last_status = parsed
+        elif "limit" in parsed:
+            # Type 02 (idle): height 永遠是 P1 preset，不可信
+            # 保留 type 01 追蹤到的 height，只更新 metadata
+            prev_height = self.last_status["height"]
+            self.last_status = parsed
+            self.last_status["height"] = prev_height
+        else:
+            # Type 01 (移動中): height 正確
+            self.last_status["height"] = parsed["height"]
         if self._loop:
             self._loop.call_soon_threadsafe(self._status_event.set)
 
@@ -137,10 +144,6 @@ class DeskController:
     async def move_to(self, height_mm: int) -> dict:
         if not self._connected:
             return {"error": "未連線"}
-
-        # 已在目標高度
-        if self.last_status and abs(self.last_status["height"] - height_mm) <= 2:
-            return {"ok": True, "height": self.last_status["height"]}
 
         async with self._lock:
             self._cancel.clear()

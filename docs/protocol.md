@@ -38,6 +38,19 @@ dd [flags] [cmd_hi] [cmd_lo] [param_hi] [param_lo] [00] [checksum]
 
 ## 回應格式（桌子 → App）
 
+Header 固定 `0x9D`，桌子每 ~150ms 回傳一次，高度單位 mm。
+
+### Type 01（14 bytes，移動中狀態）
+
+```
+9d 01 [flags] [status] [b4] [b5] [height_hi] [height_lo]
+[00] [00] [00] [00] [00] [checksum]
+```
+
+- 僅在移動期間發送
+- **height 欄位為即時實際高度**（可信）
+- status `0x88` = 移動中；b4 `0x10` = 上升，`0x20` = 下降
+
 ### Type 02（19 bytes，完整狀態）
 
 ```
@@ -46,9 +59,10 @@ dd [flags] [cmd_hi] [cmd_lo] [param_hi] [param_lo] [00] [checksum]
 [P3_hi] [P3_lo] [P4_hi] [P4_lo] [checksum]
 ```
 
-- Header 固定 `0x9D`
-- 桌子每 ~150ms 回傳一次
-- 高度單位：mm（680 = 68cm）
+- idle 狀態持續發送
+- **⚠ height 欄位在 idle 時永遠等於 P1 preset，不是實際高度**
+- 僅在移動剛結束的瞬間可能反映真實高度
+- 可信欄位：limit、P1-P4
 
 ### 高度範圍
 

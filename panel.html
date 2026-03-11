@@ -13,6 +13,11 @@
   .height .unit { font-size: 20px; color: #888; }
   .conn { font-size: 13px; color: #666; margin-top: 4px; }
   .conn.on { color: #4a4; }
+  .presets { display: flex; gap: 8px; margin-bottom: 12px; }
+  .presets button { flex: 1; padding: 12px 0; font-size: 14px; font-weight: 600; border: 2px solid #333; border-radius: 10px; background: #16213e; color: #eee; cursor: pointer; }
+  .presets button:hover { border-color: #0ff; }
+  .presets button:active { transform: scale(0.97); }
+  .presets button:disabled { opacity: 0.4; cursor: not-allowed; }
   .move-row { display: flex; gap: 10px; margin-bottom: 12px; }
   .move-row input { flex: 1; padding: 14px; font-size: 18px; font-weight: 600; border: 2px solid #333; border-radius: 10px; background: #16213e; color: #eee; text-align: center; outline: none; }
   .move-row input:focus { border-color: #0ff; }
@@ -30,15 +35,20 @@
     <div class="height"><span id="h">--</span><span class="unit"> cm</span></div>
     <div class="conn" id="conn">Disconnected</div>
   </div>
+  <div class="presets">
+    <button onclick="moveTo(650)">Low<br><small>65cm</small></button>
+    <button onclick="moveTo(750)">Mid<br><small>75cm</small></button>
+    <button onclick="moveTo(1000)">High<br><small>100cm</small></button>
+  </div>
   <div class="move-row">
-    <input id="target" type="number" placeholder="mm" min="600" max="1300" step="10">
+    <input id="target" type="number" placeholder="mm" min="620" max="1300" step="10">
     <button id="go" onclick="move()">Go</button>
   </div>
   <button class="stop" onclick="stop()">Stop</button>
   <div class="log" id="log"></div>
 </div>
 <script>
-const API = location.origin;
+const API = 'http://localhost:8741';
 const hEl = document.getElementById('h');
 const connEl = document.getElementById('conn');
 const logEl = document.getElementById('log');
@@ -67,18 +77,23 @@ async function poll() {
   }
 }
 
-async function move() {
-  const mm = parseInt(targetEl.value);
-  if (!mm || mm < 600 || mm > 1300) { setLog('Enter height 600–1300 mm'); return; }
-  goBtn.disabled = true;
+async function moveTo(mm) {
+  document.querySelectorAll('.presets button').forEach(b => b.disabled = true);
   setLog('Moving to ' + mm + 'mm...');
   try {
     const r = await fetch(API + '/to/' + mm, { method: 'POST' });
     const d = await r.json();
     if (d.error) { setLog('Error: ' + d.error); }
-    else if (d.height != null) { hEl.textContent = (d.height / 10).toFixed(1); setLog('Done'); }
     else { setLog('Done'); }
   } catch { setLog('Request failed'); }
+  document.querySelectorAll('.presets button').forEach(b => b.disabled = false);
+}
+
+async function move() {
+  const mm = parseInt(targetEl.value);
+  if (!mm || mm < 620 || mm > 1300) { setLog('Enter height 620-1300 mm'); return; }
+  goBtn.disabled = true;
+  await moveTo(mm);
   goBtn.disabled = false;
 }
 

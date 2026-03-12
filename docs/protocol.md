@@ -32,7 +32,6 @@ dd [flags] [cmd_hi] [cmd_lo] [param_hi] [param_lo] [00] [checksum]
 | MANUAL_DOWN | `dd 00 42 20 00 00 00 62` | 手動下降（按住重複發送） |
 | MANUAL_UP | `dd 00 44 20 00 00 00 64` | 手動上升 |
 | MOVE_TO | `dd 00 40 28 HH LL 00 CC` | 移動到指定高度 HHLL (mm) |
-| SET_PRESET_N | `dd 00 40 3N HH LL 00 CC` | 設定預設 N (1-4) |
 | STOP | `dd 00 c3 00 00 00 00 43` | 停止移動 |
 | INIT | `dd 01 00 00 00 00 00 00` | 初始化（連線後發一次） |
 
@@ -47,22 +46,19 @@ Header 固定 `0x9D`，桌子每 ~150ms 回傳一次，高度單位 mm。
 [00] [00] [00] [00] [00] [checksum]
 ```
 
-- 僅在移動期間發送
-- **height 欄位為即時實際高度**（可信）
+- INIT 後會送一次（帶當前高度），移動期間持續發送
+- 手控器操作時也會發送
 - status `0x88` = 移動中；b4 `0x10` = 上升，`0x20` = 下降
 
-### Type 02（19 bytes，完整狀態）
+### Type 02（19 bytes，idle 狀態）
 
 ```
-9d 02 [flags] [status] [b4] [b5] [height_hi] [height_lo]
-[limit_hi] [limit_lo] [P1_hi] [P1_lo] [P2_hi] [P2_lo]
-[P3_hi] [P3_lo] [P4_hi] [P4_lo] [checksum]
+9d 02 [flags] [status] [b4] [b5] [b6] [b7]
+[limit_hi] [limit_lo] [b10-b17] [checksum]
 ```
 
 - idle 狀態持續發送
-- **⚠ height 欄位在 idle 時永遠等於 P1 preset，不是實際高度**
-- 僅在移動剛結束的瞬間可能反映真實高度
-- 可信欄位：limit、P1-P4
+- byte 6-7 為固定配置值，非即時高度
 
 ### 高度範圍
 

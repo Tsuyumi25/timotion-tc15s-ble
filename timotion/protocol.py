@@ -5,9 +5,8 @@
   checksum = sum(bytes[2:7]) & 0x7F
 
 回應格式（桌子 → App）：
-  type 02 (19B): 9d 02 [flags] [status] [b4] [b5] [height_hi] [height_lo]
-                 [limit_hi] [limit_lo] [P1-P4 各 2 bytes] [checksum]
-  type 00 (11B), type 01 (14B): 也帶高度，但資訊較少
+  type 01 (14B): 帶即時高度 (mm)，移動中持續發送，INIT 後也會送一次
+  type 02 (19B): idle 狀態，帶 limit/status
 """
 
 
@@ -39,47 +38,53 @@ def cmd_move_to(height_mm: int) -> bytes:
     return make_cmd(0x40, 0x28, (height_mm >> 8) & 0xFF, height_mm & 0xFF)
 
 
-def cmd_set_preset(n: int, height_mm: int) -> bytes:
-    """設定預設 N（1-4）的高度"""
-    return make_cmd(0x40, 0x30 + n, (height_mm >> 8) & 0xFF, height_mm & 0xFF)
-
-
 # --- 回應解析 ---
+
+_TYPE01_LEN = 14
+_TYPE02_LEN = 19
 
 
 def parse_notify(data: bytes) -> dict | None:
     """解析桌子回傳的通知資料。
 
     Returns:
-        dict with at least "height" key, or None if unrecognized.
+        Type 01: {"height": int}
+        Type 02: {"limit": int, "status": int}
+        None if unrecognized.
     """
     if len(data) < 8 or data[0] != 0x9D:
         return None
-    height = (data[6] << 8) | data[7]
-    if data[1] == 0x02 and len(data) >= 19:
+    if data[1] == 0x01 and len(data) >= _TYPE01_LEN:
+        return {"height": (data[6] << 8) | data[7]}
+    if data[1] == 0x02 and len(data) >= _TYPE02_LEN:
         return {
-            "height": height,
             "limit": (data[8] << 8) | data[9],
-            "P1": (data[10] << 8) | data[11],
-            "P2": (data[12] << 8) | data[13],
-            "P3": (data[14] << 8) | data[15],
-            "P4": (data[16] << 8) | data[17],
             "status": data[3],
         }
-    return {"height": height}
+    return None
 
 
 def parse_latest(data: bytes) -> dict | None:
-    """Parse the last complete 0x9D packet from a data chunk.
+    """Parse all 0x9D packets from a data chunk, merge results.
 
-    Serial reads often contain multiple concatenated 19-byte packets.
-    We want the most recent status for real-time control.
+    Serial reads often contain multiple concatenated packets.
+    Return merged dict: height from the latest Type 01,
+    limit/status from the latest Type 02.
     """
-    last_idx = -1
-    for i in range(len(data) - 1, -1, -1):
+    merged = {}
+    i = 0
+    while i < len(data):
         if data[i] == 0x9D and len(data) - i >= 8:
-            last_idx = i
-            break
-    if last_idx < 0:
-        return None
-    return parse_notify(data[last_idx:])
+            parsed = parse_notify(data[i:])
+            if parsed:
+                merged.update(parsed)
+            # skip past this packet to avoid re-matching
+            if len(data) - i >= _TYPE02_LEN and data[i + 1] == 0x02:
+                i += _TYPE02_LEN
+            elif len(data) - i >= _TYPE01_LEN and data[i + 1] == 0x01:
+                i += _TYPE01_LEN
+            else:
+                i += 8
+        else:
+            i += 1
+    return merged or None

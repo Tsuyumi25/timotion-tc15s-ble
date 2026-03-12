@@ -64,12 +64,14 @@ const targetEl = document.getElementById('target');
 
 function setLog(msg) { logEl.textContent = msg; }
 
+let moving = false;
+
 async function poll() {
   try {
     const r = await fetch(API() + '/status');
     const d = await r.json();
     if (d.connected) {
-      hEl.textContent = (d.height / 10).toFixed(1);
+      if (d.height != null) hEl.textContent = (d.height / 10).toFixed(1);
       connEl.textContent = 'Connected';
       connEl.className = 'conn on';
     } else {
@@ -82,17 +84,20 @@ async function poll() {
     connEl.textContent = 'Server offline';
     connEl.className = 'conn';
   }
+  setTimeout(poll, moving ? 200 : 2000);
 }
 
 async function moveTo(mm) {
   document.querySelectorAll('.presets button').forEach(b => b.disabled = true);
   setLog('Moving to ' + mm + 'mm...');
+  moving = true;
   try {
     const r = await fetch(API() + '/to/' + mm, { method: 'POST' });
     const d = await r.json();
     if (d.error) { setLog('Error: ' + d.error); }
     else { setLog('Done'); }
   } catch { setLog('Request failed'); }
+  moving = false;
   document.querySelectorAll('.presets button').forEach(b => b.disabled = false);
 }
 
@@ -114,7 +119,6 @@ async function stop() {
 
 targetEl.addEventListener('keydown', e => { if (e.key === 'Enter') move(); });
 poll();
-setInterval(poll, 2000);
 </script>
 </body>
 </html>

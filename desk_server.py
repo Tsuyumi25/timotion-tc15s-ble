@@ -64,23 +64,26 @@ class DeskController:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop_time: float = 0
 
+    @property
+    def height(self) -> int | None:
+        return self.last_status.get("height") if self.last_status else None
+
     # -- Data callback (called from reader thread) --
 
     def _on_data(self, data: bytes):
         parsed = parse_latest(data)
         if not parsed:
             return
-        if not self.last_status:
-            self.last_status = parsed
-        elif "limit" in parsed:
-            # Type 02 (idle): height 永遠是 P1 preset，不可信
-            # 保留 type 01 追蹤到的 height，只更新 metadata
-            prev_height = self.last_status["height"]
-            self.last_status = parsed
-            self.last_status["height"] = prev_height
-        else:
-            # Type 01 (移動中): height 正確
+        if "height" in parsed:
+            if not self.last_status:
+                self.last_status = {}
             self.last_status["height"] = parsed["height"]
+        else:
+            # Type 02: limit/status
+            if not self.last_status:
+                self.last_status = parsed
+            else:
+                self.last_status.update(parsed)
         if self._loop:
             self._loop.call_soon_threadsafe(self._status_event.set)
 
@@ -121,16 +124,26 @@ class DeskController:
         self.transport.write(CMD_INIT)
         self.transport.write(CMD_IDLE)
 
-        # 等第一次狀態回傳
-        self._status_event.clear()
-        try:
-            await asyncio.wait_for(self._status_event.wait(), 2.0)
-        except asyncio.TimeoutError:
-            pass
+        # INIT 後桌子會依序回 Type 02 → Type 01（帶高度），等高度到達
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + 2.0
+        while loop.time() < deadline:
+            self._status_event.clear()
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            try:
+                await asyncio.wait_for(self._status_event.wait(), remaining)
+            except asyncio.TimeoutError:
+                break
+            if self.height is not None:
+                break
 
-        if self.last_status:
-            h = self.last_status["height"]
+        h = self.height
+        if h is not None:
             log.info("已連線！高度 %dmm (%.1fcm)", h, h / 10)
+        else:
+            log.info("已連線！（高度待移動後取得）")
 
     async def _heartbeat_until_disconnect(self):
         """每秒發 IDLE 心跳。Lock 被佔或剛停止時跳過。"""
@@ -159,7 +172,7 @@ class DeskController:
             await asyncio.sleep(0)
             await asyncio.sleep(0)
             if self._cancel.is_set():
-                h = self.last_status["height"] if self.last_status else None
+                h = self.height
                 return {"ok": True, "height": h, "cancelled": True}
 
             cmd = cmd_move_to(height_mm)
@@ -177,15 +190,15 @@ class DeskController:
                     self.transport.write(cmd)
                     await asyncio.sleep(0.05)
                     if i >= WARMUP and self.last_status:
-                        h = self.last_status["height"]
-                        if abs(h - height_mm) <= 2:
+                        h = self.last_status.get("height")
+                        if h is not None and abs(h - height_mm) <= 2:
                             break
             except Exception as e:
                 log.error("移動異常: %s", e)
             finally:
                 await self._send_stop()
 
-            h = self.last_status["height"] if self.last_status else None
+            h = self.height
             log.info("到達 %smm", h)
             return {"ok": True, "height": h, "cancelled": cancelled}
 
@@ -262,7 +275,7 @@ def main():
     log.info("  GET  /status")
     log.info("  POST /to/{mm}  /stop")
     try:
-        web.run_app(app, host="0.0.0.0", port=HTTP_PORT, print=None)
+        web.run_app(app, host="0.0.0.0", port=HTTP_PORT, print=None, access_log=None)
     except KeyboardInterrupt:
         pass
 

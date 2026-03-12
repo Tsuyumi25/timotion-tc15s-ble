@@ -6,7 +6,6 @@ from .protocol import (
     CMD_STOP,
     CMD_UP,
     cmd_move_to,
-    cmd_set_preset,
     parse_latest,
     parse_notify,
 )
@@ -20,7 +19,6 @@ __all__ = [
     "CMD_STOP",
     "CMD_UP",
     "cmd_move_to",
-    "cmd_set_preset",
     "parse_latest",
     "parse_notify",
 ]

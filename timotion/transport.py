@@ -89,6 +89,8 @@ class ATMTransport:
             if self._on_data:
                 self._on_data(data)
             return True
+        # 確保 dongle 不在殘留的透傳模式（unclean shutdown 後可能發生）
+        self.at_cmd("AT+DISCONNECT", delay=0.5)
         log.info("未連線")
         return False
 

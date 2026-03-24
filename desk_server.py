@@ -32,7 +32,7 @@ CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
 
 def _load_config() -> dict:
-    defaults = {"server": {"port": 8741, "serial_port": None}}
+    defaults = {"server": {"port": 8741}}
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             user = yaml.safe_load(f) or {}
@@ -48,8 +48,9 @@ def _load_config() -> dict:
 
 
 _cfg = _load_config()
-HTTP_PORT: int = _cfg["server"]["port"]
-SERIAL_PORT: str | None = os.environ.get("SERIAL_PORT") or _cfg["server"]["serial_port"]
+SERIAL_PORT: str = os.environ.get("SERIAL_PORT", "/dev/ttyDONGLE")
+HTTP_PORT: int = int(os.environ.get("HTTP_PORT", _cfg["server"]["port"]))
+DESK_NAME: str | None = os.environ.get("DESK_NAME") or (_cfg.get("desk") or {}).get("name")
 
 BLE_TIMEOUT = 10       # 秒，heartbeat 無回應視為斷線
 SCAN_TIMEOUT = 30      # 秒，BLE 掃描超時
@@ -306,10 +307,8 @@ def main():
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
 
-    # 檢查是否已執行 setup
-    desk_name = (_cfg.get("desk") or {}).get("name")
-    if not desk_name:
-        log.warning("⚠ config.yaml 未設定 desk.name，請先執行: python setup_dongle.py")
+    if not DESK_NAME:
+        log.warning("⚠ 未設定 desk name，請先執行 setup_dongle.py 或設定 DESK_NAME 環境變數")
 
     log.info("啟動 HTTP API on :%d", HTTP_PORT)
     log.info("  GET  /status")

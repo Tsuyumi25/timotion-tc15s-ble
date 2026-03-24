@@ -8,7 +8,7 @@ import os
 import shutil
 from pathlib import Path
 
-KEEP = {".env", "config.yaml", "docker-compose.yml"}
+KEEP = {"config.yaml", "docker-compose.yml"}
 
 def main():
     script_dir = Path(__file__).resolve().parent

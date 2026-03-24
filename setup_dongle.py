@@ -24,7 +24,7 @@ import serial
 import serial.tools.list_ports
 import yaml
 
-from timotion.transport import find_dongle_port, DEFAULT_RSSI_THRESHOLD
+from timotion.transport import DEFAULT_RSSI_THRESHOLD
 
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
@@ -116,7 +116,12 @@ def get_config_name() -> str | None:
 
 # --- Dongle Serial ---
 
-find_dongle = find_dongle_port
+def find_dongle() -> str | None:
+    """自動找 USB serial device（有 VID 的 = USB 裝置）"""
+    for port in serial.tools.list_ports.comports():
+        if port.vid is not None:
+            return port.device
+    return None
 
 
 def at_cmd(ser: serial.Serial, cmd: str, delay: float = 0.3) -> bytes:

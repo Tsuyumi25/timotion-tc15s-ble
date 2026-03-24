@@ -11,6 +11,7 @@ ATM dongle 連線後進入透傳模式：
 """
 
 import logging
+import os
 import threading
 import time
 
@@ -33,6 +34,62 @@ def find_dongle_port() -> str | None:
     return None
 
 
+def reset_usb_device(port_name: str) -> bool:
+    """透過 USBDEVFS_RESET ioctl 重設 USB 裝置。
+
+    比 sysfs authorized 0→1 可靠：ioctl 讓 kernel 在不移除裝置的情況下
+    reset，driver 會 unbind → reset → rebind，裝置路徑不變。
+    """
+    import fcntl
+    import pathlib
+    import re
+    import subprocess
+
+    # resolve symlink（如 /dev/ttyDONGLE → /dev/ttyACM1）
+    tty_name = pathlib.Path(port_name).resolve().name
+    device_path = pathlib.Path(f"/sys/class/tty/{tty_name}/device")
+    if not device_path.exists():
+        log.warning("找不到 sysfs device: %s", device_path)
+        return False
+
+    # 找 USB device level 的 busnum/devnum → /dev/bus/usb/BBB/DDD
+    usb_path = device_path.resolve()
+    usb_device_pattern = re.compile(r"^\d+-[\d.]+$")
+    while usb_path != usb_path.parent:
+        if usb_device_pattern.match(usb_path.name):
+            break
+        usb_path = usb_path.parent
+    else:
+        log.warning("找不到 USB device 節點")
+        return False
+
+    try:
+        busnum = int((usb_path / "busnum").read_text().strip())
+        devnum = int((usb_path / "devnum").read_text().strip())
+    except (FileNotFoundError, ValueError) as e:
+        log.warning("無法讀取 busnum/devnum: %s", e)
+        return False
+
+    dev_path = f"/dev/bus/usb/{busnum:03d}/{devnum:03d}"
+    log.info("重設 USB 裝置: %s (%s)", usb_path.name, dev_path)
+
+    USBDEVFS_RESET = ord("U") << (4 * 2) | 20
+    try:
+        fd = os.open(dev_path, os.O_WRONLY)
+        try:
+            fcntl.ioctl(fd, USBDEVFS_RESET, 0)
+        finally:
+            os.close(fd)
+        time.sleep(2)  # 等待 driver rebind
+        return True
+    except PermissionError:
+        log.error("無權限開啟 %s，需要 root", dev_path)
+        return False
+    except OSError as e:
+        log.error("USB reset 失敗: %s", e)
+        return False
+
+
 class ATMTransport:
     """ATM Dongle serial transport.
 
@@ -51,6 +108,7 @@ class ATMTransport:
         self._reader_thread: threading.Thread | None = None
         self._running = False
         self._on_data: callable = None  # callback(data: bytes)
+        self.last_data_time: float | None = None
 
     @property
     def connected(self) -> bool:
@@ -84,6 +142,7 @@ class ATMTransport:
         data = self._ser.read(512)
         if data and any(b == 0x9D for b in data):
             self._connected = True
+            self.last_data_time = time.monotonic()
             log.info("Dongle 已連線（桌子回應 IDLE）")
             self._start_reader()
             if self._on_data:
@@ -222,6 +281,7 @@ class ATMTransport:
                     continue
 
                 if any(b == 0x9D for b in data):
+                    self.last_data_time = time.monotonic()
                     if not self._connected:
                         self._connected = True
                         log.info("BLE 已連線（收到桌子回應）")

@@ -9,6 +9,7 @@ HTTP API：
 import asyncio
 import logging
 import os
+import time
 from pathlib import Path
 
 import yaml
@@ -16,7 +17,7 @@ from aiohttp import web
 import aiohttp_cors
 
 from timotion.protocol import CMD_IDLE, CMD_INIT, CMD_STOP, cmd_move_to, parse_latest
-from timotion.transport import ATMTransport
+from timotion.transport import ATMTransport, reset_usb_device
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +50,10 @@ def _load_config() -> dict:
 _cfg = _load_config()
 HTTP_PORT: int = _cfg["server"]["port"]
 SERIAL_PORT: str | None = os.environ.get("SERIAL_PORT") or _cfg["server"]["serial_port"]
+
+BLE_TIMEOUT = 10       # 秒，heartbeat 無回應視為斷線
+SCAN_TIMEOUT = 30      # 秒，BLE 掃描超時
+MAX_SCAN_RETRIES = 3   # 連續掃描失敗後觸發 USB reset
 
 
 # --- Desk Controller (async, serial transport in thread) ---
@@ -98,17 +103,38 @@ class DeskController:
     async def connection_loop(self):
         """開啟 serial → probe/scan → init → heartbeat，斷線則重連。"""
         self._loop = asyncio.get_running_loop()
+        scan_failures = 0
 
         while True:
             try:
                 await self._connect()
+                scan_failures = 0
                 await self._heartbeat_until_disconnect()
+            except TimeoutError as e:
+                scan_failures += 1
+                log.warning("掃描失敗 (%d/%d): %s", scan_failures, MAX_SCAN_RETRIES, e)
+                if scan_failures >= MAX_SCAN_RETRIES:
+                    log.warning("連續掃描失敗，嘗試重設 USB dongle...")
+                    try:
+                        await asyncio.to_thread(self.transport.close)
+                    except Exception:
+                        pass
+                    port = self.transport.port_name
+                    if port and await asyncio.to_thread(reset_usb_device, port):
+                        log.info("USB 重設完成，重試連線...")
+                    else:
+                        log.error("USB 重設失敗，等待後重試...")
+                    scan_failures = 0
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 log.warning("連線異常: %s", e)
 
             self._connected = False
+            try:
+                await asyncio.to_thread(self.transport.close)
+            except Exception:
+                pass
             log.info("斷線，5 秒後重連...")
             await asyncio.sleep(5)
 
@@ -121,7 +147,10 @@ class DeskController:
         if not connected:
             await asyncio.to_thread(self.transport.start_scan)
             # 主動送 IDLE 觸發桌子回應，reader thread 偵測 0x9D → _connected
+            deadline = asyncio.get_event_loop().time() + SCAN_TIMEOUT
             while not self.transport.connected:
+                if asyncio.get_event_loop().time() > deadline:
+                    raise TimeoutError(f"BLE 掃描超時 ({SCAN_TIMEOUT}s)")
                 await self._write_raw(CMD_IDLE)
                 await asyncio.sleep(0.5)
 
@@ -157,6 +186,11 @@ class DeskController:
             now = asyncio.get_event_loop().time()
             if not self._lock.locked() and now - self._stop_time > 0.5:
                 await self._write(CMD_IDLE)
+            # watchdog：超過 BLE_TIMEOUT 秒沒收到桌子資料 → 視為斷線
+            ldt = self.transport.last_data_time
+            if ldt is not None and time.monotonic() - ldt > BLE_TIMEOUT:
+                log.warning("桌子超過 %ds 無回應，視為斷線", BLE_TIMEOUT)
+                break
             await asyncio.sleep(1.0)
 
     # -- Commands --

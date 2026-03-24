@@ -66,7 +66,7 @@ class ATMTransport:
             raise RuntimeError("找不到 ATM dongle，請指定 port")
         log.info("開啟 %s (baud=%d)", self.port_name, self.baudrate)
         self._ser = serial.Serial(
-            self.port_name, baudrate=self.baudrate, timeout=0.5
+            self.port_name, baudrate=self.baudrate, timeout=0.5, write_timeout=1
         )
         self._ser.reset_input_buffer()
 
@@ -187,8 +187,8 @@ class ATMTransport:
         with self._lock:
             try:
                 self._ser.write(data)
-            except Exception:
-                pass
+            except Exception as e:
+                log.error("write_raw 失敗: %s", e)
 
     # -- internal --
 
@@ -211,18 +211,23 @@ class ATMTransport:
 
     def _reader_loop(self):
         """Read loop: detect connection state and forward desk data."""
-        while self._running and self._ser and self._ser.is_open:
-            try:
-                data = self._ser.read(512)
-            except Exception:
-                break
-            if not data:
-                continue
+        try:
+            while self._running and self._ser and self._ser.is_open:
+                try:
+                    data = self._ser.read(512)
+                except Exception as e:
+                    log.error("reader 異常: %s", e)
+                    break
+                if not data:
+                    continue
 
-            if any(b == 0x9D for b in data):
-                if not self._connected:
-                    self._connected = True
-                    log.info("BLE 已連線（收到桌子回應）")
-                log.debug("RX [%d]: %s", len(data), data.hex(' '))
-                if self._on_data:
-                    self._on_data(data)
+                if any(b == 0x9D for b in data):
+                    if not self._connected:
+                        self._connected = True
+                        log.info("BLE 已連線（收到桌子回應）")
+                    log.debug("RX [%d]: %s", len(data), data.hex(' '))
+                    if self._on_data:
+                        self._on_data(data)
+        finally:
+            self._connected = False
+            log.info("reader thread 結束")

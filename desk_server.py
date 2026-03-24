@@ -68,6 +68,12 @@ class DeskController:
     def height(self) -> int | None:
         return self.last_status.get("height") if self.last_status else None
 
+    async def _write(self, data: bytes):
+        await asyncio.to_thread(self.transport.write, data)
+
+    async def _write_raw(self, data: bytes):
+        await asyncio.to_thread(self.transport.write_raw, data)
+
     # -- Data callback (called from reader thread) --
 
     def _on_data(self, data: bytes):
@@ -116,13 +122,13 @@ class DeskController:
             await asyncio.to_thread(self.transport.start_scan)
             # 主動送 IDLE 觸發桌子回應，reader thread 偵測 0x9D → _connected
             while not self.transport.connected:
-                self.transport.write_raw(CMD_IDLE)
+                await self._write_raw(CMD_IDLE)
                 await asyncio.sleep(0.5)
 
         self._connected = True
         self.last_status = None
-        self.transport.write(CMD_INIT)
-        self.transport.write(CMD_IDLE)
+        await self._write(CMD_INIT)
+        await self._write(CMD_IDLE)
 
         # INIT 後桌子會依序回 Type 02 → Type 01（帶高度），等高度到達
         loop = asyncio.get_event_loop()
@@ -150,7 +156,7 @@ class DeskController:
         while self._connected and self.transport.connected:
             now = asyncio.get_event_loop().time()
             if not self._lock.locked() and now - self._stop_time > 0.5:
-                self.transport.write(CMD_IDLE)
+                await self._write(CMD_IDLE)
             await asyncio.sleep(1.0)
 
     # -- Commands --
@@ -159,7 +165,7 @@ class DeskController:
         if not self._connected:
             return
         for _ in range(5):
-            self.transport.write(CMD_STOP)
+            await self._write(CMD_STOP)
             await asyncio.sleep(0.03)
 
     async def move_to(self, height_mm: int) -> dict:
@@ -187,7 +193,7 @@ class DeskController:
                         log.info("移動被取消")
                         cancelled = True
                         break
-                    self.transport.write(cmd)
+                    await self._write(cmd)
                     await asyncio.sleep(0.05)
                     if i >= WARMUP and self.last_status:
                         h = self.last_status.get("height")

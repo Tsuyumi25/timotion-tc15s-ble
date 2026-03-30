@@ -1,0 +1,15 @@
+[Unit]
+Description=TiMOTION Desk BLE Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=__INSTALL_DIR__
+ExecStart=__INSTALL_DIR__/.venv/bin/python desk_server.py
+Restart=always
+RestartSec=5
+User=__USER__
+SupplementaryGroups=dialout
+
+[Install]
+WantedBy=multi-user.target

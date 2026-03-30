@@ -12,7 +12,6 @@
 
 - Python 3.11+
 - Raytac MDBT50Q-RX-ATM dongle
-- Linux：需 Docker（生產部署）或直接 pip 執行
 
 ## 部署
 
@@ -30,55 +29,44 @@ cd timotion-tc15s-ble
 - 檢查 Python 版本、venv 支援、dialout 群組
 - 建立 `.venv` 並安裝所有依賴（含 bleak 掃描）
 - 建立 `config.yaml`
-- 檢查 `/dev/ttyDONGLE`，若不存在則偵測 dongle VID:PID 並提示 udev rule 設定指令
+- 檢查 `/dev/ttyDONGLE`，若不存在則偵測 dongle VID:PID 並提示 udev rule 設定指令（非 NixOS）
 - 執行 `setup_dongle.py` 配對 dongle
 
-### Linux — Docker（推薦）
+### Linux — systemd（推薦）
 
 ```bash
-./install.sh          # 配對 dongle + 環境設定
-# 按提示設定 udev rule（如果還沒有）
-docker compose up -d  # 啟動（image 從 GHCR 拉取）
-python3 cleanup.py    # （可選）清理原始碼，只留部署所需檔案
+./install.sh    # 配對 dongle + 環境設定
+# 按提示設定 udev rule 和安裝 systemd service
+sudo systemctl enable --now timotion-desk
 ```
-
-> Docker 部署需要 `/dev/ttyDONGLE` symlink（由 udev rule 建立）。`install.sh` 會偵測 dongle 並提示對應的 udev 指令。
 
 查看日誌：
 
 ```bash
-docker compose logs -f
+journalctl -u timotion-desk -f
 ```
 
 ### Linux — NixOS
 
 ```bash
-./install.sh    # 配對 dongle，記下 DESK_NAME 和 VID:PID
+./install.sh    # 配對 dongle，記下 DESK_NAME
 ```
 
-然後在 NixOS 設定中加入（不需要 config.yaml 和 docker-compose.yml）：
+在你的 flake.nix 加入 input：
 
 ```nix
-# udev rule（tty symlink + USB 權限，後者讓 container 能 reset dongle）
-services.udev.extraRules = ''
-  SUBSYSTEM=="tty", ATTRS{idVendor}=="1915", ATTRS{idProduct}=="521a", SYMLINK+="ttyDONGLE", MODE="0666"
-  SUBSYSTEM=="usb", ATTR{idVendor}=="1915", ATTR{idProduct}=="521a", MODE="0666"
-'';
+inputs.timotion.url = "github:Tsuyumi25/timotion-tc15s-ble";
+inputs.timotion.inputs.nixpkgs.follows = "nixpkgs";
+```
 
-# Container
-virtualisation.oci-containers.containers.desk = {
-  image = "ghcr.io/tsuyumi25/timotion-tc15s-ble:latest";
-  ports = [ "8741:8741" ];
-  environment = {
-    DESK_NAME = "HC-  XXXX";  # install.sh 配對時顯示的名稱
-  };
-  volumes = [
-    "/dev/bus/usb:/dev/bus/usb"  # USB reset 用
-  ];
-  extraOptions = [
-    "--name=desk"
-    "--device=/dev/ttyDONGLE:/dev/ttyDONGLE"
-  ];
+啟用 module（udev rule 和 systemd service 自動處理）：
+
+```nix
+imports = [ inputs.timotion.nixosModules.default ];
+
+services.timotion = {
+  enable = true;
+  deskName = "HC-  XXXX";  # install.sh 配對時顯示的名稱
 };
 ```
 
@@ -139,11 +127,12 @@ python setup_dongle.py --reset   # 恢復 dongle 出廠設定
 |------|---------|-------------|--------|
 | Serial port | `SERIAL_PORT` | — | `/dev/ttyDONGLE` |
 | HTTP port | `HTTP_PORT` | `server.port` | `8741` |
+| HTTP bind address | `HTTP_HOST` | — | `0.0.0.0` |
 | 桌子名稱 | `DESK_NAME` | `desk.name` | — |
 
 ### 疑難排解
 
-- **容器啟動後卡在「探測連線狀態」或「開始掃描」**：server 會自動在掃描超時（30 秒）後重試，連續失敗 3 次會嘗試透過 sysfs 重設 USB dongle。如果自動重設無效，手動拔插 USB dongle 再重啟容器。
+- **啟動後卡在「探測連線狀態」或「開始掃描」**：server 會自動在掃描超時（30 秒）後重試，連續失敗 3 次會嘗試透過 sysfs 重設 USB dongle。如果自動重設無效，手動拔插 USB dongle 再 `sudo systemctl restart timotion-desk`。
 - **連線正常但偶爾斷線**：dongle 的 BLE 信號範圍有限（RSSI threshold 預設 -65dBm），確保 dongle 與桌子距離在 2 公尺內。server 內建 watchdog，超過 10 秒無回應會自動觸發重連。
 
 ## API

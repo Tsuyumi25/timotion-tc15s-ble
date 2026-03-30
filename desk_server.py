@@ -50,6 +50,7 @@ def _load_config() -> dict:
 _cfg = _load_config()
 SERIAL_PORT: str = os.environ.get("SERIAL_PORT", "/dev/ttyDONGLE")
 HTTP_PORT: int = int(os.environ.get("HTTP_PORT", _cfg["server"]["port"]))
+HTTP_HOST: str = os.environ.get("HTTP_HOST", "0.0.0.0")
 DESK_NAME: str | None = os.environ.get("DESK_NAME") or (_cfg.get("desk") or {}).get("name")
 
 BLE_TIMEOUT = 10       # 秒，heartbeat 無回應視為斷線
@@ -314,7 +315,7 @@ def main():
     log.info("  GET  /status")
     log.info("  POST /to/{mm}  /stop")
     try:
-        web.run_app(app, host="0.0.0.0", port=HTTP_PORT, print=None, access_log=None)
+        web.run_app(app, host=HTTP_HOST, port=HTTP_PORT, print=None, access_log=None)
     except KeyboardInterrupt:
         pass
 

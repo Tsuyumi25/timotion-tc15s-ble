@@ -66,15 +66,6 @@ if [ "$(uname)" = "Linux" ] && ! $IS_NIXOS; then
     fi
 fi
 
-# --- Docker（選用） ---
-
-info "檢查 Docker..."
-if command -v docker &>/dev/null; then
-    ok "Docker $(docker --version | grep -oP '\d+\.\d+\.\d+')"
-else
-    warn "Docker 未安裝（不影響直接執行，僅 Docker 部署需要）"
-fi
-
 # --- 前置檢查結果 ---
 
 echo ""
@@ -113,9 +104,10 @@ else
     ok "config.yaml 已存在"
 fi
 
-# --- udev rule 檢查（Linux） ---
+# --- udev rule 檢查（Linux，非 NixOS） ---
+# NixOS 用戶的 udev rule 由 nixosModule 自動處理，不需手動設定。
 
-if [ "$(uname)" = "Linux" ]; then
+if [ "$(uname)" = "Linux" ] && ! $IS_NIXOS; then
     info "檢查 /dev/ttyDONGLE..."
     if [ -e /dev/ttyDONGLE ]; then
         ok "/dev/ttyDONGLE 存在（udev rule 已生效）"
@@ -133,16 +125,8 @@ if [ "$(uname)" = "Linux" ]; then
                 USB_RULE="SUBSYSTEM==\"usb\", ATTR{idVendor}==\"$VID\", ATTR{idProduct}==\"$PID\", MODE=\"0666\""
                 warn "/dev/ttyDONGLE 不存在，需要建立 udev rule"
                 echo ""
-                if $IS_NIXOS; then
-                    echo -e "  ${CYAN}NixOS 設定：${NC}"
-                    echo "  services.udev.extraRules = ''"
-                    echo "    $TTY_RULE"
-                    echo "    $USB_RULE"
-                    echo "  '';"
-                else
-                    echo -e "  ${CYAN}執行以下指令：${NC}"
-                    echo "  sudo bash -c 'printf \"$TTY_RULE\n$USB_RULE\n\" > /etc/udev/rules.d/99-atm-dongle.rules && udevadm control --reload-rules && udevadm trigger'"
-                fi
+                echo -e "  ${CYAN}執行以下指令：${NC}"
+                echo "  sudo bash -c 'printf \"$TTY_RULE\n$USB_RULE\n\" > /etc/udev/rules.d/99-atm-dongle.rules && udevadm control --reload-rules && udevadm trigger'"
                 echo ""
             else
                 warn "找到 dongle 但無法讀取 VID:PID"
@@ -179,12 +163,24 @@ echo ""
 
 if $IS_NIXOS; then
     echo "NixOS 用戶下一步："
-    echo "  在 timotion.nix 中設定："
-    echo "    environment.DESK_NAME = \"$DESK_NAME\";"
+    echo "  在 flake.nix inputs 加入 timotion，啟用 nixosModule："
+    echo ""
+    echo "    services.timotion = {"
+    echo "      enable = true;"
+    echo "      deskName = \"$DESK_NAME\";"
+    echo "    };"
+    echo ""
     echo "  然後 nixos-rebuild switch"
 else
     echo "下一步："
-    echo "  docker compose up -d    # Docker 部署"
-    echo "  或"
-    echo "  python desk_server.py   # 直接執行"
+    echo ""
+    echo "  # 安裝 systemd service（推薦）"
+    echo "  sudo cp timotion-desk.service /etc/systemd/system/"
+    echo "  sudo sed -i 's|__INSTALL_DIR__|$SCRIPT_DIR|g; s|__USER__|$(whoami)|g' /etc/systemd/system/timotion-desk.service"
+    echo "  sudo systemctl daemon-reload"
+    echo "  sudo systemctl enable --now timotion-desk"
+    echo ""
+    echo "  # 或直接執行"
+    echo "  source .venv/bin/activate"
+    echo "  python desk_server.py"
 fi

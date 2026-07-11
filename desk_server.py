@@ -4,6 +4,7 @@ HTTP API：
   GET  /status        查詢高度
   POST /to/{height}   移到指定高度 (mm)
   POST /stop          緊急停止
+  POST /power-cycle   對 dongle USB port 斷電再通電 (需 uhubctl 設定)
 """
 
 import asyncio
@@ -52,6 +53,28 @@ SERIAL_PORT: str = os.environ.get("SERIAL_PORT", "/dev/ttyDONGLE")
 HTTP_PORT: int = int(os.environ.get("HTTP_PORT", _cfg["server"]["port"]))
 HTTP_HOST: str = os.environ.get("HTTP_HOST", "0.0.0.0")
 DESK_NAME: str | None = os.environ.get("DESK_NAME") or (_cfg.get("desk") or {}).get("name")
+
+# uhubctl：三者皆有值時才啟用 power cycle（/power-cycle endpoint + 自動觸發）
+UHUBCTL_PATH: str | None = os.environ.get("UHUBCTL_PATH")
+UHUBCTL_LOCATION: str | None = os.environ.get("UHUBCTL_LOCATION")
+UHUBCTL_PORT: str | None = os.environ.get("UHUBCTL_PORT")
+# 連續重連失敗達此次數 → 自動 power cycle
+UHUBCTL_AUTO_THRESHOLD: int = int(os.environ.get("UHUBCTL_AUTO_THRESHOLD", "5"))
+
+
+def uhubctl_available() -> bool:
+    return bool(UHUBCTL_PATH and UHUBCTL_LOCATION and UHUBCTL_PORT)
+
+
+async def run_uhubctl() -> tuple[int | None, str, str]:
+    """對 dongle USB port 斷電 3 秒再通電，回傳 (exit_code, stdout, stderr)。"""
+    proc = await asyncio.create_subprocess_exec(
+        UHUBCTL_PATH, "-l", UHUBCTL_LOCATION, "-p", UHUBCTL_PORT, "-a", "cycle", "-d", "3",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    return proc.returncode, stdout.decode(errors="replace"), stderr.decode(errors="replace")
 
 BLE_TIMEOUT = 10       # 秒，heartbeat 無回應視為斷線
 SCAN_TIMEOUT = 30      # 秒，BLE 掃描超時
@@ -106,14 +129,17 @@ class DeskController:
         """開啟 serial → probe/scan → init → heartbeat，斷線則重連。"""
         self._loop = asyncio.get_running_loop()
         scan_failures = 0
+        reconnect_failures = 0
 
         while True:
             try:
                 await self._connect()
                 scan_failures = 0
+                reconnect_failures = 0
                 await self._heartbeat_until_disconnect()
             except TimeoutError as e:
                 scan_failures += 1
+                reconnect_failures += 1
                 log.warning("掃描失敗 (%d/%d): %s", scan_failures, MAX_SCAN_RETRIES, e)
                 if scan_failures >= MAX_SCAN_RETRIES:
                     log.warning("連續掃描失敗，嘗試重設 USB dongle...")
@@ -130,7 +156,23 @@ class DeskController:
             except asyncio.CancelledError:
                 raise
             except Exception as e:
+                reconnect_failures += 1
                 log.warning("連線異常: %s", e)
+
+            # 連續重連失敗達門檻 → 自動 power cycle（比 sysfs reset 更強的手段）
+            if uhubctl_available() and reconnect_failures >= UHUBCTL_AUTO_THRESHOLD:
+                log.warning("USB dongle power cycle（連續 %d 次重連失敗）", reconnect_failures)
+                try:
+                    await asyncio.to_thread(self.transport.close)
+                except Exception:
+                    pass
+                try:
+                    code, _out, err = await run_uhubctl()
+                    if code != 0:
+                        log.error("uhubctl 失敗 (exit %s): %s", code, err.strip())
+                except Exception as e:
+                    log.error("uhubctl 執行異常: %s", e)
+                reconnect_failures = 0
 
             self._connected = False
             try:
@@ -288,6 +330,24 @@ async def handle_stop(request):
     return web.json_response(await desk.stop())
 
 
+async def handle_power_cycle(request):
+    if not uhubctl_available():
+        return web.json_response(
+            {"error": "power-cycle 未設定（需 UHUBCTL_PATH/LOCATION/PORT）"},
+            status=501,
+        )
+
+    # 斷電 3 秒再通電；reconnect 由 connection_loop 自行處理
+    log.info("power-cycle USB port %s (location %s)", UHUBCTL_PORT, UHUBCTL_LOCATION)
+    code, stdout, stderr = await run_uhubctl()
+    return web.json_response({
+        "ok": code == 0,
+        "exit_code": code,
+        "stdout": stdout,
+        "stderr": stderr,
+    })
+
+
 async def on_startup(app):
     app["ble"] = asyncio.create_task(desk.connection_loop())
 
@@ -305,6 +365,7 @@ def main():
     cors.add(app.router.add_get("/status", handle_status))
     cors.add(app.router.add_post("/to/{height}", handle_move_to))
     cors.add(app.router.add_post("/stop", handle_stop))
+    cors.add(app.router.add_post("/power-cycle", handle_power_cycle))
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
 
@@ -314,6 +375,8 @@ def main():
     log.info("啟動 HTTP API on :%d", HTTP_PORT)
     log.info("  GET  /status")
     log.info("  POST /to/{mm}  /stop")
+    if UHUBCTL_PATH and UHUBCTL_LOCATION and UHUBCTL_PORT:
+        log.info("  POST /power-cycle")
     try:
         web.run_app(app, host=HTTP_HOST, port=HTTP_PORT, print=None, access_log=None)
     except KeyboardInterrupt:

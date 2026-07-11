@@ -134,6 +134,7 @@ python setup_dongle.py --reset   # 恢復 dongle 出廠設定
 
 - **啟動後卡在「探測連線狀態」或「開始掃描」**：server 會自動在掃描超時（30 秒）後重試，連續失敗 3 次會嘗試透過 sysfs 重設 USB dongle。如果自動重設無效，手動拔插 USB dongle 再 `sudo systemctl restart timotion-desk`。
 - **連線正常但偶爾斷線**：dongle 的 BLE 信號範圍有限（RSSI threshold 預設 -65dBm），確保 dongle 與桌子距離在 2 公尺內。server 內建 watchdog，超過 10 秒無回應會自動觸發重連。
+- **dongle 韌體卡死、sysfs 重設救不回來**：設定 uhubctl（NixOS module 的 `services.timotion.uhubctl`）後，連續重連失敗達門檻（`autoThreshold`，預設 5 次）時 server 會自動對 dongle 所在 USB port 斷電再通電，強制韌體重新開機。也可手動 `curl -X POST http://localhost:8741/power-cycle` 觸發。
 
 ## API
 
@@ -142,6 +143,7 @@ python setup_dongle.py --reset   # 恢復 dongle 出廠設定
 | `/status` | GET | 查詢高度 (mm) 與連線狀態 |
 | `/to/{height_mm}` | POST | 移到指定高度，範圍 620–1300 mm |
 | `/stop` | POST | 緊急停止 |
+| `/power-cycle` | POST | 對 dongle 所在 USB port 斷電 3 秒再通電（需設定 uhubctl，未設定回 501） |
 
 範例：
 
@@ -149,6 +151,7 @@ python setup_dongle.py --reset   # 恢復 dongle 出廠設定
 curl http://localhost:8741/status
 curl -X POST http://localhost:8741/to/750
 curl -X POST http://localhost:8741/stop
+curl -X POST http://localhost:8741/power-cycle
 ```
 
 ## 測試面板

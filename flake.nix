@@ -73,6 +73,32 @@
               default = false;
               description = "Whether to open the HTTP port in the firewall.";
             };
+
+            uhubctl = {
+              enable = lib.mkEnableOption "POST /power-cycle endpoint via uhubctl";
+
+              location = lib.mkOption {
+                type = lib.types.str;
+                description = ''
+                  USB hub location the dongle is plugged into (uhubctl -l),
+                  e.g. "1-1" or a hub VID:PID. Find it with `uhubctl`.
+                '';
+              };
+
+              port = lib.mkOption {
+                type = lib.types.int;
+                description = "Hub port number the dongle is on (uhubctl -p).";
+              };
+
+              autoThreshold = lib.mkOption {
+                type = lib.types.int;
+                default = 5;
+                description = ''
+                  Auto power-cycle the port after this many consecutive
+                  reconnect failures.
+                '';
+              };
+            };
           };
 
           config = lib.mkIf cfg.enable {
@@ -91,6 +117,11 @@
                 HTTP_PORT = toString cfg.httpPort;
                 HTTP_HOST = cfg.httpHost;
                 DESK_NAME = cfg.deskName;
+              } // lib.optionalAttrs cfg.uhubctl.enable {
+                UHUBCTL_PATH = "${pkgs.uhubctl}/bin/uhubctl";
+                UHUBCTL_LOCATION = cfg.uhubctl.location;
+                UHUBCTL_PORT = toString cfg.uhubctl.port;
+                UHUBCTL_AUTO_THRESHOLD = toString cfg.uhubctl.autoThreshold;
               };
 
               serviceConfig = {
@@ -107,6 +138,10 @@
                   "/dev/ttyDONGLE rw"
                   "/dev/bus/usb/* rw"
                 ];
+                # uhubctl 透過 libusb 對 hub 下 control transfer 切換 port 電源，
+                # NoNewPrivileges + ProtectSystem=strict 下需要 CAP_SYS_RAWIO。
+                AmbientCapabilities =
+                  lib.mkIf cfg.uhubctl.enable [ "CAP_SYS_RAWIO" ];
               };
             };
 

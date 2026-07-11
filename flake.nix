@@ -136,12 +136,11 @@
                 NoNewPrivileges = true;
                 DeviceAllow = [
                   "/dev/ttyDONGLE rw"
-                  "/dev/bus/usb/* rw"
+                  # USB device 節點是 /dev/bus/usb/BBB/DDD 兩層路徑，glob 不跨
+                  # '/'，所以要用 device group（major 189 = usb_device）。
+                  # uhubctl 切 port 電源、以及 USBDEVFS_RESET 重設 dongle 都靠它。
+                  "char-usb_device rw"
                 ];
-                # uhubctl 透過 libusb 對 hub 下 control transfer 切換 port 電源，
-                # NoNewPrivileges + ProtectSystem=strict 下需要 CAP_SYS_RAWIO。
-                AmbientCapabilities =
-                  lib.mkIf cfg.uhubctl.enable [ "CAP_SYS_RAWIO" ];
               };
             };
 

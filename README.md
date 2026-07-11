@@ -74,6 +74,31 @@ services.timotion = {
 sudo nixos-rebuild switch
 ```
 
+#### 選用：USB 斷電重啟（uhubctl）
+
+dongle 韌體偶爾會卡死到 BLE 完全連不上，連內建的 USB reset（`USBDEVFS_RESET` ioctl）也救不回來，只能實體拔插。如果 dongle 插在一個支援 **PPPS（per-port power switching，逐埠電源開關）** 的 USB hub 上，可以啟用 uhubctl，讓 server 對該 port 軟體斷電再通電，等同拔插但不用到場。
+
+先確認 hub 支援 PPPS 並找出 dongle 的位置（`location` 與 `port`）：
+
+```bash
+sudo uhubctl
+# 找標著 ppps 的 hub，看 dongle（Nordic nRF52…）在哪個 hub location / port
+# 例：Current status for hub 1 [...] → Port 2: ... Nordic Semiconductor
+```
+
+然後在 module 加上：
+
+```nix
+services.timotion.uhubctl = {
+  enable = true;
+  location = "1";       # uhubctl -l 的值
+  port = 2;             # uhubctl -p 的值
+  autoThreshold = 5;    # 連續重連失敗幾次後自動斷電（預設 5）
+};
+```
+
+啟用後 module 會注入 uhubctl 的環境變數，並在 systemd service 的 `DeviceAllow` 放行 USB 裝置節點（`char-usb_device`）。service 以 root 執行，不需要額外的 capability——之前試 `CAP_SYS_RAWIO` / `CAP_SYS_ADMIN` 都無效，因為問題從來不是權限位元，而是 `DeviceAllow` 的 glob 涵蓋不到 `/dev/bus/usb/BBB/DDD` 這種兩層節點。
+
 ### Linux — 直接執行
 
 ```bash
@@ -129,6 +154,12 @@ python setup_dongle.py --reset   # 恢復 dongle 出廠設定
 | HTTP port | `HTTP_PORT` | `server.port` | `8741` |
 | HTTP bind address | `HTTP_HOST` | — | `0.0.0.0` |
 | 桌子名稱 | `DESK_NAME` | `desk.name` | — |
+| uhubctl 執行檔路徑 | `UHUBCTL_PATH` | — | —（未設則停用 power cycle） |
+| uhubctl hub 位置 | `UHUBCTL_LOCATION` | — | — |
+| uhubctl port 編號 | `UHUBCTL_PORT` | — | — |
+| 自動斷電門檻（連續重連失敗次數） | `UHUBCTL_AUTO_THRESHOLD` | — | `5` |
+
+`UHUBCTL_PATH`/`LOCATION`/`PORT` 三者需同時設定才會啟用 power cycle（手動 `/power-cycle` endpoint 與自動觸發），任一缺少則整個功能停用、endpoint 回 501。NixOS module 啟用 `services.timotion.uhubctl` 時會自動填這幾個變數。
 
 ### 疑難排解
 

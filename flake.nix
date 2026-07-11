@@ -7,10 +7,12 @@
 
   outputs = { self, nixpkgs }:
     let
-      system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+      forAllSystems = f:
+        nixpkgs.lib.genAttrs systems
+          (system: f nixpkgs.legacyPackages.${system});
 
-      desk-server = pkgs.python3Packages.buildPythonApplication {
+      mkDeskServer = pkgs: pkgs.python3Packages.buildPythonApplication {
         pname = "timotion-tc15s-ble";
         version = "0.1.0";
         format = "pyproject";
@@ -30,11 +32,14 @@
       };
     in
     {
-      packages.${system}.default = desk-server;
+      packages = forAllSystems (pkgs: {
+        default = mkDeskServer pkgs;
+      });
 
       nixosModules.default = { config, lib, pkgs, ... }:
         let
           cfg = config.services.timotion;
+          desk-server = mkDeskServer pkgs;
         in
         {
           options.services.timotion = {
